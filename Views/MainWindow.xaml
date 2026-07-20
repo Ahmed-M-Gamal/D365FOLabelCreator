@@ -1,0 +1,288 @@
+<Window x:Class="D365LabelCreator.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="D365 F&amp;O Label Creator" Height="760" Width="1180"
+        Background="{StaticResource WindowBrush}" Foreground="{StaticResource FgBrush}"
+        FontFamily="Segoe UI" FontSize="12.5">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ===== Filters ===== -->
+        <GroupBox Grid.Row="0" Header="Source" Padding="8" Margin="0,0,0,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Row 1: packages / model / label file / scan -->
+                <Grid Grid.Row="0" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="PackagesLocalDirectory" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBox   Grid.Column="1" Text="{Binding PackagesPath, UpdateSourceTrigger=PropertyChanged}"
+                               VerticalAlignment="Center" />
+                    <Button    Grid.Column="2" Content="Browse…" Margin="6,0,16,0" Padding="10,3"
+                               Command="{Binding BrowseCommand}" />
+
+                    <TextBlock Grid.Column="3" Text="Model" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox  Grid.Column="4" ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel}"
+                               VerticalAlignment="Center" />
+
+                    <TextBlock Grid.Column="5" Text="Label file" VerticalAlignment="Center" Margin="16,0,8,0" />
+                    <ComboBox  Grid.Column="6" ItemsSource="{Binding LabelFiles}" SelectedItem="{Binding SelectedLabelFile}"
+                               VerticalAlignment="Center" />
+
+                    <Button    Grid.Column="7" Content="Scan" Margin="16,0,0,0" Padding="18,3" FontWeight="SemiBold"
+                               Command="{Binding ScanCommand}" />
+                </Grid>
+
+                <!-- Row 2: projects directory / solution / project (optional filters) -->
+                <Grid Grid.Row="1" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="ProjectsDirectory" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBox   Grid.Column="1" Text="{Binding ProjectsPath, UpdateSourceTrigger=PropertyChanged}"
+                               VerticalAlignment="Center" />
+                    <Button    Grid.Column="2" Content="Browse…" Margin="6,0,16,0" Padding="10,3"
+                               Command="{Binding BrowseProjectsCommand}" />
+
+                    <TextBlock Grid.Column="3" Text="Solution" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox  Grid.Column="4" ItemsSource="{Binding Solutions}" SelectedItem="{Binding SelectedSolution}"
+                               VerticalAlignment="Center" />
+                    <Button    Grid.Column="5" Content="✕" ToolTip="Clear solution" Margin="3,0,16,0" Padding="7,2"
+                               Command="{Binding ClearSolutionCommand}" />
+
+                    <TextBlock Grid.Column="6" Text="Project" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox  Grid.Column="7" ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}"
+                               VerticalAlignment="Center" />
+                    <Button    Grid.Column="8" Content="✕" ToolTip="Clear project" Margin="3,0,0,0" Padding="7,2"
+                               Command="{Binding ClearProjectCommand}" />
+                </Grid>
+
+                <!-- Row 3: object type / item (populated from scanned hardcoded labels) -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="260" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="Object type" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox  Grid.Column="1" ItemsSource="{Binding ObjectTypes}" SelectedItem="{Binding SelectedObjectType}"
+                               VerticalAlignment="Center" />
+                    <Button    Grid.Column="2" Content="✕" ToolTip="Clear object type" Margin="3,0,16,0" Padding="7,2"
+                               Command="{Binding ClearObjectTypeCommand}" />
+
+                    <TextBlock Grid.Column="3" Text="Item" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox  Grid.Column="4" ItemsSource="{Binding ItemFilters}" SelectedItem="{Binding SelectedItemFilter}"
+                               VerticalAlignment="Center" />
+                    <Button    Grid.Column="5" Content="✕" ToolTip="Clear item" Margin="3,0,0,0" Padding="7,2"
+                               Command="{Binding ClearItemFilterCommand}" />
+                </Grid>
+            </Grid>
+        </GroupBox>
+
+        <!-- ===== Working area ===== -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition Width="340" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Groups -->
+            <GroupBox Grid.Column="0" Header="Hardcoded labels" Padding="4">
+                <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
+                         BorderThickness="0" Background="{StaticResource PanelBrush}"
+                         HorizontalContentAlignment="Stretch"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                                <Border Grid.Column="1" Background="{StaticResource ControlBrush}" CornerRadius="8"
+                                        Padding="6,0" Margin="6,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding PendingCount}" Foreground="{StaticResource FgMutedBrush}"
+                                               FontSize="11" />
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </GroupBox>
+
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                          Background="{StaticResource BorderBrush}" />
+
+            <!-- Items in the selected group -->
+            <GroupBox Grid.Column="2" Padding="4">
+                <GroupBox.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Metadata items" />
+                        <TextBlock Text="{Binding SelectedCount, StringFormat=' — {0} selected'}"
+                                   Foreground="{StaticResource FgMutedBrush}" />
+                    </StackPanel>
+                </GroupBox.Header>
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button x:Name="SelectAllBtn" Content="Select all" Padding="8,2" Margin="0,0,6,0"
+                                Click="SelectAll_Click" />
+                        <Button x:Name="UnselectAllBtn" Content="Unselect all" Padding="8,2"
+                                Click="UnselectAll_Click" />
+                    </StackPanel>
+                    <ListView x:Name="ItemsList" ItemsSource="{Binding Items}" SelectionMode="Extended"
+                              BorderThickness="0" SelectionChanged="ItemsList_SelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="2">
+                                    <TextBlock Text="{Binding ObjectName}" FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FFE05555" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Location}" Foreground="{StaticResource FgMutedBrush}"
+                                                   FontSize="11" />
+                                        <TextBlock Text="  (read-only)" Foreground="#FFE05555" FontSize="11"
+                                                   Visibility="{Binding IsReadOnly, Converter={StaticResource BoolToVis}}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </DockPanel>
+            </GroupBox>
+
+            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch"
+                          Background="{StaticResource BorderBrush}" />
+
+            <!-- Editor + preview -->
+            <GroupBox Grid.Column="4" Header="New label (dry run)" Padding="8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Id prefix" VerticalAlignment="Center" Margin="0,0,0,6" />
+                    <TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,6"
+                               ToolTip="Added to the front of every defaulted id unless already present in it"
+                               Text="{Binding IdPrefix, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Label id *" VerticalAlignment="Center" Margin="0,0,0,6" />
+                    <TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,6"
+                               Text="{Binding LabelId, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Text *" VerticalAlignment="Top" Margin="0,4,0,6" />
+                    <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,6">
+                        <TextBox Text="{Binding LabelText, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Text="{Binding ExistingLabelInfo}" Foreground="#FFE06C75" FontSize="11"
+                                   TextWrapping="Wrap" Margin="0,3,0,0"
+                                   Visibility="{Binding HasExistingLabelInfo, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Description" VerticalAlignment="Center" Margin="0,0,0,6" />
+                    <TextBox   Grid.Row="3" Grid.Column="1" Margin="0,0,0,6"
+                               Text="{Binding LabelDescription, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal"
+                                HorizontalAlignment="Left" Margin="0,2,0,10">
+                        <Button Content="Validate ▶" Padding="18,4" FontWeight="SemiBold"
+                                Command="{Binding ValidateCommand}" />
+                        <Button Content="Single quotes ?" Padding="12,4" Margin="8,0,0,0"
+                                ToolTip="Replace double quotes with single quotes instead ?"
+                                Command="{Binding ConvertToSingleQuotesCommand}" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Text="Preview (focused item)"
+                               Foreground="{StaticResource FgMutedBrush}" Margin="0,0,0,4" />
+
+                    <Grid Grid.Row="6" Grid.ColumnSpan="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <RichTextBox x:Name="PreviewBeforeBox" Grid.Row="0" IsReadOnly="True"
+                                     FontFamily="Consolas" FontSize="12"
+                                     Background="{StaticResource InputBrush}" Foreground="{StaticResource FgBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     ScrollViewer.ScrollChanged="PreviewScrollChanged" />
+
+                        <TextBlock Grid.Row="1" Text="▼ after" Foreground="{StaticResource FgMutedBrush}"
+                                   HorizontalAlignment="Center" Margin="0,3" />
+
+                        <RichTextBox x:Name="PreviewAfterBox" Grid.Row="2" IsReadOnly="True"
+                                     FontFamily="Consolas" FontSize="12"
+                                     Background="{StaticResource InputBrush}" Foreground="{StaticResource FgBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     ScrollViewer.ScrollChanged="PreviewScrollChanged" />
+                    </Grid>
+                </Grid>
+            </GroupBox>
+        </Grid>
+
+        <!-- ===== Status ===== -->
+        <StatusBar Grid.Row="2" Margin="0,8,0,0">
+            <TextBlock Text="{Binding Status}" />
+        </StatusBar>
+    </Grid>
+</Window>
