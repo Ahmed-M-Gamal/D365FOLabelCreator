@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using D365LabelCreator.Models;
 
@@ -7,17 +8,16 @@ namespace D365LabelCreator.Services;
 /// <summary>Builds and validates label ids.</summary>
 public static class LabelIdHelper
 {
+    // Internal tracker to remember generated IDs and apply number sequences automatically
+    private static readonly HashSet<string> _usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Default id for a single occurrence, followed by the prefix rule:
-    ///   - form control caption/label/text     -> the control's &lt;Name&gt;
-    ///   - table field / field group           -> its &lt;Name&gt;
-    ///   - enum / enum-extension value         -> "&lt;object&gt;_&lt;valueName&gt;"
-    ///   - form &lt;Design&gt; caption and everything else -> the object (file) name
-    /// Enum-extension objects drop their ".ModelName" suffix. A HelpText property finally gets a
-    /// "_HelpText" suffix.
+    /// Default id generated using the context (object/control name) AND the actual label text.
+    /// Automatically applies a number sequence (_1, _2) if the ID already exists.
     /// </summary>
     public static string DefaultId(LabelOccurrence occ, string? prefix = null)
     {
+        // 1. Determine the context prefix (using your original fallback logic)
         string objectBase = occ.Item.Name;
         if (occ.Item.ElementType == "AxEnumExtension")
         {
@@ -26,23 +26,66 @@ public static class LabelIdHelper
                 objectBase = objectBase[..dot];
         }
 
-        string id;
+        string contextPrefix;
         if (occ.ParentType == "AxEnumValue" && !string.IsNullOrEmpty(occ.EnumValueName))
-            id = objectBase + "_" + occ.EnumValueName;       // keep the value's own underscore verbatim
+            contextPrefix = objectBase + "_" + occ.EnumValueName;       // keep the value's own underscore verbatim
         else if (IsFormControl(occ.ParentType) && !string.IsNullOrEmpty(occ.OwnerName))
-            id = occ.OwnerName!;                             // form control -> its <Name>
+            contextPrefix = occ.OwnerName;                             // form control -> its <Name>
         else if (IsTableField(occ.ParentType) && !string.IsNullOrEmpty(occ.OwnerName))
-            id = occ.OwnerName!;                             // table field / field group -> its <Name>
+            contextPrefix = occ.OwnerName;                             // table field / field group -> its <Name>
         else
-            id = objectBase;                                 // form Design caption, table label, EDT, menu item, …
+            contextPrefix = objectBase;                                // form Design caption, table label, EDT, menu item, …
 
-        string result = ApplyPrefix(Sanitize(id), prefix);
+        // 2. Sanitize the context prefix and the actual label text
+        string cleanContext = Sanitize(contextPrefix);
+        string sanitizedText = Sanitize(occ.Text);
 
-        // A help text hangs off the same id as its label.
+        if (string.IsNullOrEmpty(sanitizedText))
+            sanitizedText = "Label";
+
+        // 3. Combine them to create a descriptive ID (e.g. "CustTable_CustomerBalance")
+        string baseId = string.IsNullOrEmpty(cleanContext)
+            ? sanitizedText
+            : $"{cleanContext}_{sanitizedText}";
+
+        // 4. Apply optional global prefix
+        baseId = ApplyPrefix(baseId, prefix);
+
+        // 5. A help text gets a "_HelpText" suffix.
         if (occ.PropertyName == "HelpText")
-            result += "_HelpText";
+            baseId += "_HelpText";
 
-        return result;
+        // 6. Ensure Uniqueness (Number Sequence Fallback)
+        string finalId = baseId;
+        int sequence = 1;
+
+        while (_usedIds.Contains(finalId))
+        {
+            finalId = $"{baseId}_{sequence}";
+            sequence++;
+        }
+
+        // 7. Register the ID so future calls don't reuse it
+        _usedIds.Add(finalId);
+
+        return finalId;
+    }
+
+    /// <summary>
+    /// Generates a label id directly from text by sanitizing it and optionally applying a prefix.
+    /// Note: Does not track uniqueness on its own unless you manually add that logic here.
+    /// </summary>
+    public static string GenerateIdFromText(string labelText, string? prefix = null)
+    {
+        if (string.IsNullOrWhiteSpace(labelText))
+            return prefix ?? "Label";
+
+        string sanitized = Sanitize(labelText);
+
+        if (string.IsNullOrEmpty(sanitized))
+            sanitized = "Label";
+
+        return ApplyPrefix(sanitized, prefix);
     }
 
     /// <summary>A form control node, e.g. AxFormControl / AxFormButtonGroupControl / AxFormStringControl.</summary>
@@ -73,6 +116,8 @@ public static class LabelIdHelper
     /// <summary>Removes whitespace and replaces any char outside [A-Za-z0-9_] with '_'.</summary>
     public static string Sanitize(string id)
     {
+        if (string.IsNullOrWhiteSpace(id)) return string.Empty;
+
         var sb = new StringBuilder(id.Length);
         foreach (var c in id)
         {
