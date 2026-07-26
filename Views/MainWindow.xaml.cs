@@ -172,4 +172,10 @@ public partial class MainWindow : Window
     private void SelectAll_Click(object sender, RoutedEventArgs e) => ItemsList.SelectAll();
 
     private void UnselectAll_Click(object sender, RoutedEventArgs e) => ItemsList.UnselectAll();
+
+    /// <summary>Called when a checkbox in the Groups list changes to update bulk operation availability.</summary>
+    private void GroupCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        _vm.OnGroupSelectionChanged();
+    }
 }

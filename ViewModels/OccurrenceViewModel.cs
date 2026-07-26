@@ -22,4 +22,15 @@ public sealed class OccurrenceViewModel : ObservableObject
     public bool IsReadOnly => Occurrence.Item.IsReadOnly;
 
     public string FilePath => Occurrence.Item.FilePath;
+
+    /// <summary>
+    /// Suggested/default id for this occurrence (computed when items are loaded).
+    /// May be empty if no sensible default could be derived.
+    /// </summary>
+    private string _suggestedId = "";
+    public string SuggestedId
+    {
+        get => _suggestedId;
+        set => SetProperty(ref _suggestedId, value);
+    }
 }

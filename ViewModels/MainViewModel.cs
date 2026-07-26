@@ -31,6 +31,12 @@ public sealed class MainViewModel : ObservableObject
         ScanCommand = new RelayCommand(Scan, () => SelectedLabelFile != null);
         ValidateCommand = new RelayCommand(Validate, CanValidate);
         ConvertToSingleQuotesCommand = new RelayCommand(ConvertToSingleQuotes, CanConvertToSingleQuotes);
+        BulkGenerateCommand = new RelayCommand(BulkGenerateSelected, () => SelectedLabelFile != null && _selected.Count > 0);
+        BulkSkipCommand = new RelayCommand(BulkSkipSelected, () => SelectedLabelFile != null && _selected.Count > 0);
+        BulkGenerateGroupsCommand = new RelayCommand(BulkGenerateGroups, () => SelectedLabelFile != null && _selectedGroups.Count > 0);
+        BulkSkipGroupsCommand = new RelayCommand(BulkSkipGroups, () => SelectedLabelFile != null && _selectedGroups.Count > 0);
+        SelectAllGroupsCommand = new RelayCommand(SelectAllGroups);
+        UnselectAllGroupsCommand = new RelayCommand(UnselectAllGroups);
 
         // Restore saved path, else auto-detect on first launch.
         var path = _config.PackagesLocalDirectory;
@@ -178,10 +184,10 @@ public sealed class MainViewModel : ObservableObject
     }
 
     // ----- Step 4: grouped labels -----
-    public ObservableCollection<LabelGroup> Groups { get; } = new();
+    public ObservableCollection<LabelGroupViewModel> Groups { get; } = new();
 
-    private LabelGroup? _selectedGroup;
-    public LabelGroup? SelectedGroup
+    private LabelGroupViewModel? _selectedGroup;
+    public LabelGroupViewModel? SelectedGroup
     {
         get => _selectedGroup;
         set
@@ -189,6 +195,14 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _selectedGroup, value))
                 LoadItems();
         }
+    }
+
+    private List<LabelGroupViewModel> _selectedGroups = new();
+    private int _selectedGroupsCount;
+    public int SelectedGroupsCount
+    {
+        get => _selectedGroupsCount;
+        private set => SetProperty(ref _selectedGroupsCount, value);
     }
 
     // ----- Step 5: items in the selected group -----
@@ -298,6 +312,12 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ScanCommand { get; }
     public RelayCommand ValidateCommand { get; }
     public RelayCommand ConvertToSingleQuotesCommand { get; }
+    public RelayCommand BulkGenerateCommand { get; }
+    public RelayCommand BulkSkipCommand { get; }
+    public RelayCommand BulkGenerateGroupsCommand { get; }
+    public RelayCommand BulkSkipGroupsCommand { get; }
+    public RelayCommand SelectAllGroupsCommand { get; }
+    public RelayCommand UnselectAllGroupsCommand { get; }
 
     /// <summary>Raised after the item list is rebuilt so the view can select the first item.</summary>
     public event Action? ItemsReloaded;
@@ -478,6 +498,285 @@ public sealed class MainViewModel : ObservableObject
                  $"{_allOccurrences.Count} occurrence(s).";
     }
 
+    /// <summary>
+    /// Bulk-generate labels for the selected occurrences. Distinct suggested ids are processed
+    /// independently; existing label ids are reused when present.
+    /// </summary>
+    private void BulkGenerateSelected()
+    {
+        if (SelectedLabelFile == null || _selected.Count == 0)
+            return;
+
+        // Group selected occurrences by their suggested id (fall back to computed if empty).
+        var groups = _selected.GroupBy(vm =>
+        {
+            var id = vm.SuggestedId;
+            if (string.IsNullOrWhiteSpace(id))
+                id = LabelIdHelper.DefaultId(vm.Occurrence, IdPrefix);
+            return id ?? "";
+        }, StringComparer.Ordinal);
+
+        int created = 0, reused = 0, applied = 0;
+        foreach (var g in groups)
+        {
+            string id = g.Key;
+            if (string.IsNullOrWhiteSpace(id) || !LabelIdHelper.IsValid(id))
+                continue; // skip invalid/uncomputable ids
+
+            bool reuseExisting = false;
+            if (_existingLabels.TryGetValue(id, out var existing))
+            {
+                reuseExisting = true;
+                reused++;
+            }
+            else
+            {
+                // Create new entry using the group's shared text/description
+                var sampleOcc = g.First().Occurrence;
+                string text = sampleOcc.Text;
+                string description = string.IsNullOrEmpty(LabelDescription) ? DefaultDescription : LabelDescription;
+                var entry = new LabelFileEntry { Id = id, Text = text, Description = description };
+
+                try
+                {
+                    LabelFileService.InsertSorted(SelectedLabelFile.ContentFilePath, entry);
+                    _existingLabels[id] = entry;
+                    created++;
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to insert label '{id}':\n{ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    continue;
+                }
+            }
+
+            // Apply replacements for all occurrences in this id-group that are still pending.
+            var occs = g.Select(vm => vm.Occurrence).Where(o => !o.Treated).ToList();
+            if (occs.Count == 0)
+                continue;
+
+            string reference = ReplacementService.BuildReference(SelectedLabelFile.LabelFileId, id);
+            try
+            {
+                ReplacementService.ApplySelection(_allOccurrences, occs, reference);
+                applied += occs.Count;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to apply '{id}':\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // Show result dialog
+        int totalProcessed = created + reused;
+        string message = $"Bulk Generation Complete\n\n" +
+                        $"Labels Processed: {totalProcessed}\n" +
+                        $"  • Created: {created}\n" +
+                        $"  • Reused: {reused}\n" +
+                        $"\nOccurrences Replaced: {applied}";
+        MessageBox.Show(message, "Bulk Generate Labels", MessageBoxButton.OK, MessageBoxImage.Information);
+
+        Status = $"Generated {totalProcessed} label(s) and applied to {applied} occurrence(s).";
+
+        // Reload items to remove those that are now treated
+        if (SelectedGroup != null)
+        {
+            if (SelectedGroup.Group.PendingCount == 0)
+            {
+                // Current group is now empty, advance to next
+                AdvanceAfterTreatment();
+            }
+            else
+            {
+                // Reload items to refresh the list with remaining items
+                LoadItems();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Bulk-skip the selected labels: persist skipped label keys under the current model so they
+    /// do not appear next time the same model's labels are scanned/loaded.
+    /// </summary>
+    private void BulkSkipSelected()
+    {
+        if (SelectedModel == null || _selected.Count == 0)
+            return;
+
+        var skippedKeys = _selected.Select(vm => LabelGroup.NormalizeKey(vm.Occurrence.Text)).ToList();
+        int added = SkippedLabelsService.AddSkippedLabels(SelectedModel.ModelDir, skippedKeys);
+
+        if (added > 0)
+        {
+            string message = $"Skip Labels Complete\n\n" +
+                            $"Labels Skipped: {added}\n" +
+                            $"Model: {SelectedModel.Name}\n\n" +
+                            $"These labels will be ignored in future scans.";
+            MessageBox.Show(message, "Bulk Skip Labels", MessageBoxButton.OK, MessageBoxImage.Information);
+            Status = $"Skipped {added} label(s) for model '{SelectedModel.Name}'.";
+        }
+        else
+        {
+            MessageBox.Show("No new labels to skip (all already skipped).", "Bulk Skip Labels", MessageBoxButton.OK, MessageBoxImage.Information);
+            Status = "No new skipped labels.";
+        }
+
+        RefreshFiltersAndGroups();
+    }
+
+    /// <summary>
+    /// Bulk-generate labels for the selected label groups. Each group's all occurrences
+    /// are treated as a single label entry.
+    /// </summary>
+    private void BulkGenerateGroups()
+    {
+        if (SelectedLabelFile == null || _selectedGroups.Count == 0)
+            return;
+
+        int created = 0, reused = 0, applied = 0;
+        var groupsToProcess = _selectedGroups.ToList(); // Create a snapshot before processing
+
+        foreach (var groupVm in groupsToProcess)
+        {
+            var group = groupVm.Group;
+            // Get occurrences before any processing to avoid them being marked as treated
+            var occs = group.PendingOccurrences.Where(o => !o.Treated).ToList();
+            if (occs.Count == 0)
+                continue;
+
+            string id = groupVm.SuggestedId;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                var firstOcc = occs.FirstOrDefault();
+                if (firstOcc != null)
+                    id = LabelIdHelper.DefaultId(firstOcc, IdPrefix);
+            }
+
+            if (string.IsNullOrWhiteSpace(id) || !LabelIdHelper.IsValid(id))
+                continue;
+
+            bool reuseExisting = false;
+            if (_existingLabels.TryGetValue(id, out var existing))
+            {
+                reuseExisting = true;
+                reused++;
+            }
+            else
+            {
+                string text = group.DisplayText;
+                string description = string.IsNullOrEmpty(LabelDescription) ? DefaultDescription : LabelDescription;
+                var entry = new LabelFileEntry { Id = id, Text = text, Description = description };
+
+                try
+                {
+                    LabelFileService.InsertSorted(SelectedLabelFile.ContentFilePath, entry);
+                    _existingLabels[id] = entry;
+                    created++;
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to insert label '{id}':\n{ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    continue;
+                }
+            }
+
+            string reference = ReplacementService.BuildReference(SelectedLabelFile.LabelFileId, id);
+            try
+            {
+                ReplacementService.ApplySelection(_allOccurrences, occs, reference);
+                applied += occs.Count;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to apply '{id}':\n{ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // Show result dialog
+        int totalProcessed = created + reused;
+        string message = $"Bulk Generation Complete\n\n" +
+                        $"Labels Processed: {totalProcessed}\n" +
+                        $"  • Created: {created}\n" +
+                        $"  • Reused: {reused}\n" +
+                        $"\nOccurrences Replaced: {applied}";
+        MessageBox.Show(message, "Bulk Generate Labels", MessageBoxButton.OK, MessageBoxImage.Information);
+
+        Status = $"Generated {totalProcessed} label(s) and applied to {applied} occurrence(s).";
+
+        // Remove all groups that now have no pending occurrences and clear selection
+        UnselectAllGroups();
+        var groupsToRemove = Groups.Where(g => g.Group.PendingCount == 0).ToList();
+        foreach (var g in groupsToRemove)
+            Groups.Remove(g);
+
+        // If there are groups left, select the first one
+        if (Groups.Count > 0)
+            SelectedGroup = Groups[0];
+        else
+            SelectedGroup = null;
+    }
+
+    /// <summary>
+    /// Bulk-skip the selected label groups.
+    /// </summary>
+    private void BulkSkipGroups()
+    {
+        if (SelectedModel == null || _selectedGroups.Count == 0)
+            return;
+
+        var skippedKeys = _selectedGroups.Select(g => LabelGroup.NormalizeKey(g.Group.DisplayText)).ToList();
+        int added = SkippedLabelsService.AddSkippedLabels(SelectedModel.ModelDir, skippedKeys);
+
+        if (added > 0)
+        {
+            string message = $"Skip Labels Complete\n\n" +
+                            $"Labels Skipped: {added}\n" +
+                            $"Model: {SelectedModel.Name}\n\n" +
+                            $"These labels will be ignored in future scans.";
+            MessageBox.Show(message, "Bulk Skip Labels", MessageBoxButton.OK, MessageBoxImage.Information);
+            Status = $"Skipped {added} label(s) for model '{SelectedModel.Name}'.";
+        }
+        else
+        {
+            MessageBox.Show("No new labels to skip (all already skipped).", "Bulk Skip Labels", MessageBoxButton.OK, MessageBoxImage.Information);
+            Status = "No new skipped labels.";
+        }
+
+        RefreshFiltersAndGroups();
+    }
+
+    private void SelectAllGroups()
+    {
+        foreach (var g in Groups)
+            g.IsSelected = true;
+        UpdateGroupSelection();
+    }
+
+    private void UnselectAllGroups()
+    {
+        foreach (var g in Groups)
+            g.IsSelected = false;
+        UpdateGroupSelection();
+    }
+
+    private void UpdateGroupSelection()
+    {
+        _selectedGroups = Groups.Where(g => g.IsSelected).ToList();
+        SelectedGroupsCount = _selectedGroups.Count;
+        BulkGenerateGroupsCommand.RaiseCanExecuteChanged();
+        BulkSkipGroupsCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>Called from XAML code-behind when group checkbox state changes.</summary>
+    public void OnGroupSelectionChanged()
+    {
+        UpdateGroupSelection();
+    }
+
     private void BuildGroups()
     {
         ClearResults();
@@ -485,6 +784,12 @@ public sealed class MainViewModel : ObservableObject
         string? typeFilter = SelectedObjectType?.ElementType;
         ItemOption? itemFilter = SelectedItemFilter;
         var map = new Dictionary<string, LabelGroup>(StringComparer.Ordinal);
+
+        // Load skipped labels for the current model
+        var skippedLabels = SelectedModel != null 
+            ? SkippedLabelsService.LoadSkippedLabels(SelectedModel.ModelDir)
+            : new List<string>();
+
         foreach (var occ in _allOccurrences)
         {
             if (occ.Treated)
@@ -496,6 +801,12 @@ public sealed class MainViewModel : ObservableObject
             if (itemFilter != null &&
                 (occ.Item.ElementType != itemFilter.ElementType || occ.Item.Name != itemFilter.Name))
                 continue;
+
+            // Skip items user previously marked as skipped for this model
+            string norm = LabelGroup.NormalizeKey(occ.Text);
+            if (skippedLabels.Contains(norm, StringComparer.OrdinalIgnoreCase))
+                continue;
+
             string key = LabelGroup.NormalizeKey(occ.Text);
             if (!map.TryGetValue(key, out var g))
             {
@@ -506,7 +817,14 @@ public sealed class MainViewModel : ObservableObject
         }
 
         foreach (var g in map.Values.OrderBy(g => g.DisplayText, StringComparer.OrdinalIgnoreCase))
-            Groups.Add(g);
+        {
+            var vm = new LabelGroupViewModel(g);
+            // Auto-generate suggested id from the first pending occurrence
+            var firstOcc = g.PendingOccurrences.FirstOrDefault();
+            if (firstOcc != null)
+                vm.SuggestedId = LabelIdHelper.DefaultId(firstOcc, IdPrefix);
+            Groups.Add(vm);
+        }
     }
 
     private void LoadItems()
@@ -520,8 +838,15 @@ public sealed class MainViewModel : ObservableObject
         if (SelectedGroup == null)
             return;
 
-        foreach (var occ in SelectedGroup.PendingOccurrences)
-            Items.Add(new OccurrenceViewModel(occ));
+        foreach (var occ in SelectedGroup.Group.PendingOccurrences)
+        {
+            var vm = new OccurrenceViewModel(occ)
+            {
+                // Auto-generate suggested id for each item using existing helper and current prefix
+                SuggestedId = LabelIdHelper.DefaultId(occ, IdPrefix)
+            };
+            Items.Add(vm);
+        }
 
         LabelText = SelectedGroup.DisplayText;
         LabelDescription = DefaultDescription;
@@ -543,6 +868,8 @@ public sealed class MainViewModel : ObservableObject
         UpdatePreview();
         ValidateCommand.RaiseCanExecuteChanged();
         ConvertToSingleQuotesCommand.RaiseCanExecuteChanged();
+        BulkGenerateCommand.RaiseCanExecuteChanged();
+        BulkSkipCommand.RaiseCanExecuteChanged();
     }
 
     /// <summary>
@@ -798,6 +1125,8 @@ public sealed class MainViewModel : ObservableObject
     private void ClearResults()
     {
         Groups.Clear();
+        _selectedGroups.Clear();
+        SelectedGroupsCount = 0;
         SelectedGroup = null;
         Items.Clear();
         ClearPreview();

@@ -126,28 +126,64 @@
             </Grid.ColumnDefinitions>
 
             <!-- Groups -->
-            <GroupBox Grid.Column="0" Header="Hardcoded labels" Padding="4">
-                <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
-                         BorderThickness="0" Background="{StaticResource PanelBrush}"
-                         HorizontalContentAlignment="Stretch"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="2">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
-                                <Border Grid.Column="1" Background="{StaticResource ControlBrush}" CornerRadius="8"
-                                        Padding="6,0" Margin="6,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding PendingCount}" Foreground="{StaticResource FgMutedBrush}"
-                                               FontSize="11" />
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+            <GroupBox Grid.Column="0" Padding="4">
+                <GroupBox.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Hardcoded labels" />
+                        <TextBlock Text="{Binding SelectedGroupsCount, StringFormat=' — {0} selected'}"
+                                   Foreground="{StaticResource FgMutedBrush}" />
+                    </StackPanel>
+                </GroupBox.Header>
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="Select all" Padding="8,2" Margin="0,0,6,0"
+                                Command="{Binding SelectAllGroupsCommand}"
+                                ToolTip="Select all hardcoded label groups" />
+                        <Button Content="Unselect all" Padding="8,2"
+                                Command="{Binding UnselectAllGroupsCommand}"
+                                ToolTip="Clear all selections" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0" HorizontalAlignment="Right">
+                        <Button Content="Generate selected" Padding="10,2" Margin="0,0,6,0"
+                                Command="{Binding BulkGenerateGroupsCommand}"
+                                ToolTip="Create label ids for the selected groups and apply changes to files" />
+                        <Button Content="Skip selected" Padding="10,2"
+                                Command="{Binding BulkSkipGroupsCommand}"
+                                ToolTip="Mark selected groups as skipped for this model (persisted)" />
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
+                             BorderThickness="0" Background="{StaticResource PanelBrush}"
+                             HorizontalContentAlignment="Stretch"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" 
+                                              VerticalAlignment="Center" Margin="0,0,6,0"
+                                              Checked="GroupCheckBox_CheckedChanged"
+                                              Unchecked="GroupCheckBox_CheckedChanged" />
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                                    <Border Grid.Column="2" Background="{StaticResource ControlBrush}" CornerRadius="4" 
+                                            Padding="4,1" Margin="6,0,6,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding SuggestedId}" Foreground="{StaticResource FgMutedBrush}"
+                                                   FontSize="10" FontFamily="Consolas" />
+                                    </Border>
+                                    <Border Grid.Column="3" Background="{StaticResource ControlBrush}" CornerRadius="8"
+                                            Padding="6,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding PendingCount}" Foreground="{StaticResource FgMutedBrush}"
+                                                   FontSize="11" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
             </GroupBox>
 
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
@@ -165,27 +201,41 @@
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
                         <Button x:Name="SelectAllBtn" Content="Select all" Padding="8,2" Margin="0,0,6,0"
-                                Click="SelectAll_Click" />
+                                Click="SelectAll_Click" ToolTip="Select all metadata items" />
                         <Button x:Name="UnselectAllBtn" Content="Unselect all" Padding="8,2"
-                                Click="UnselectAll_Click" />
+                                Click="UnselectAll_Click" ToolTip="Clear selection" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0" HorizontalAlignment="Right">
+                        <Button Content="Generate selected" Padding="10,2" Margin="0,0,6,0"
+                                Command="{Binding BulkGenerateCommand}"
+                                ToolTip="Create labels for selected metadata items and apply them to files" />
+                        <Button Content="Skip selected" Padding="10,2"
+                                Command="{Binding BulkSkipCommand}"
+                                ToolTip="Mark selected metadata items as skipped for this model" />
                     </StackPanel>
                     <ListView x:Name="ItemsList" ItemsSource="{Binding Items}" SelectionMode="Extended"
                               BorderThickness="0" SelectionChanged="ItemsList_SelectionChanged">
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="2">
-                                    <TextBlock Text="{Binding ObjectName}" FontWeight="SemiBold">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
-                                                        <Setter Property="Foreground" Value="#FFE05555" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding ObjectName}" FontWeight="SemiBold" Margin="0,0,12,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource FgBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                                                            <Setter Property="Foreground" Value="#FFE05555" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <Border Background="{StaticResource ControlBrush}" CornerRadius="4" Padding="4,1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding SuggestedId}" Foreground="{StaticResource FgMutedBrush}"
+                                                       FontSize="10" FontFamily="Consolas" />
+                                        </Border>
+                                    </StackPanel>
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="{Binding Location}" Foreground="{StaticResource FgMutedBrush}"
                                                    FontSize="11" />
